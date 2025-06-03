@@ -1,0 +1,103 @@
+// BlazorTaskManagerApp
+// This is a minimal complete example with client, server, and shared logic in one file.
+// Intended for conceptual understanding; not a deployable app in this form.
+
+//---------------------------------
+// Shared Model
+//---------------------------------
+namespace TaskManager.Shared
+{
+    public class TaskItem
+    {
+        public int Id { get; set; }
+        public string Title { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public DateTime DueDate { get; set; }
+        public bool IsCompleted { get; set; }
+    }
+}
+
+//---------------------------------
+// Server API (ASP.NET Core Controller)
+//---------------------------------
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using TaskManager.Shared;
+
+namespace TaskManager.Server.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    public class TasksController : ControllerBase
+    {
+        private readonly ApplicationDbContext _context;
+        public TasksController(ApplicationDbContext context) => _context = context;
+
+        [HttpGet]
+        public async Task<ActionResult<IEnumerable<TaskItem>>> GetTasks() => await _context.Tasks.ToListAsync();
+
+        [HttpPost]
+        public async Task<IActionResult> Create(TaskItem item)
+        {
+            _context.Tasks.Add(item);
+            await _context.SaveChangesAsync();
+            return CreatedAtAction(nameof(GetTasks), new { id = item.Id }, item);
+        }
+    }
+
+    public class ApplicationDbContext : DbContext
+    {
+        public ApplicationDbContext(DbContextOptions options) : base(options) { }
+        public DbSet<TaskItem> Tasks => Set<TaskItem>();
+    }
+}
+
+//---------------------------------
+// Blazor Client Component
+//---------------------------------
+@page "/tasks"
+@inject HttpClient Http
+@using TaskManager.Shared
+
+<h3>Task List</h3>
+<ul>
+    @foreach (var task in tasks)
+    {
+        <li>@task.Title - @(task.IsCompleted ? "✅" : "❌")</li>
+    }
+</ul>
+
+<input type="text" @bind="newTask.Title" placeholder="Task Title" />
+<button @onclick="AddTask">Add Task</button>
+
+@code {
+    private List<TaskItem> tasks = new();
+    private TaskItem newTask = new() { DueDate = DateTime.Now.AddDays(1) };
+
+    protected override async Task OnInitializedAsync() => tasks = await Http.GetFromJsonAsync<List<TaskItem>>("api/tasks");
+
+    private async Task AddTask()
+    {
+        await Http.PostAsJsonAsync("api/tasks", newTask);
+        tasks = await Http.GetFromJsonAsync<List<TaskItem>>("api/tasks");
+        newTask = new TaskItem { DueDate = DateTime.Now.AddDays(1) };
+    }
+}
+
+//---------------------------------
+// Program.cs (Server-side Blazor or API Project Setup)
+//---------------------------------
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddDbContext<ApplicationDbContext>(options =>
+    options.UseInMemoryDatabase("TasksDB"));
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
+var app = builder.Build();
+app.UseSwagger();
+app.UseSwaggerUI();
+app.UseAuthorization();
+app.MapControllers();
+app.Run();
